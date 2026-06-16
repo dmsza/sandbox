@@ -2,6 +2,11 @@ name: Build helloworld
 
 on:
   push:
+    paths-ignore:
+      - 'builds/**'
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -12,12 +17,15 @@ jobs:
           - target: x86_64-linux
             cc: gcc
             output: helloworld
+            dest: builds/linux/x64
           - target: aarch64-linux
             cc: aarch64-linux-gnu-gcc
             output: helloworld
+            dest: builds/linux/aarch64
           - target: x86_64-windows
             cc: x86_64-w64-mingw32-gcc
             output: helloworld.exe
+            dest: builds/windows/x64
 
     steps:
       - uses: actions/checkout@v4
@@ -30,8 +38,18 @@ jobs:
       - name: Build
         run: ${{ matrix.cc }} helloworld.c -o ${{ matrix.output }}
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: helloworld-${{ matrix.target }}
-          path: ${{ matrix.output }}
-          
+      - name: Package and publish
+        run: |
+          TIMESTAMP=$(date -u +"%Y%m%d%H%M%S")
+          ZIPNAME="${{ matrix.output }}_${TIMESTAMP}.zip"
+          DESTDIR="${{ matrix.dest }}"
+
+          mkdir -p "$DESTDIR"
+          zip "$DESTDIR/$ZIPNAME" "${{ matrix.output }}"
+
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git pull --rebase origin ${{ github.ref_name }}
+          git add "$DESTDIR/$ZIPNAME"
+          git commit -m "build: publish $ZIPNAME to $DESTDIR"
+          git push origin ${{ github.ref_name }}
